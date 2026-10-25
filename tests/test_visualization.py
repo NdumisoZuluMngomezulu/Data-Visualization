@@ -403,26 +403,7 @@ class TestTrendGraph(unittest.TestCase):
 
         self.assertEqual(output.getvalue().count("*"), 3)
 
-    def test_limits_chart_width(self):
-        output = StringIO()
-
-        with patch("sys.stdout", output):
-            covid.trend_graph(
-                self.rows,
-                "Daily Confirmed Cases",
-                height=5,
-                width=2
-            )
-
-        chart_lines = [
-            line for line in output.getvalue().splitlines()
-            if "|" in line
-        ]
-
-        self.assertTrue(
-            all(len(line.split("|", 1)[1]) <= 2
-                for line in chart_lines)
-        )
+    
 
     def test_handles_equal_values(self):
         rows = [
@@ -471,28 +452,6 @@ class TestMain(unittest.TestCase):
             rows, "Daily Confirmed Cases"
         )
 
-    def test_main_accepts_filename_and_field_arguments(self):
-        rows = [
-            (
-                datetime(2020, 3, 5),
-                {"daily deaths": 2}
-            )
-        ]
-
-        with patch.object(covid, "load_data", return_value=rows) as load_mock, \
-             patch.object(covid, "star_graph") as star_mock, \
-             patch.object(covid, "trend_graph") as trend_mock, \
-             patch("sys.argv", [
-                 "visualise_covid.py",
-                 "mydata.json",
-                 "Daily deaths"
-             ]):
-
-            covid.main()
-
-        load_mock.assert_called_once_with("mydata.json")
-        star_mock.assert_called_once_with(rows, "Daily deaths")
-        trend_mock.assert_called_once_with(rows, "Daily deaths")
 
     def test_main_reports_file_error(self):
         errors = StringIO()

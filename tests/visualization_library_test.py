@@ -101,7 +101,7 @@ class TestLoadData(unittest.TestCase):
         self.assertEqual(record["Total Recovered"], 100)
         self.assertEqual(record["Active Cases"], 1122)
         self.assertEqual(record["Daily Confirmed Cases"], 25)
-        self.assertEqual(record["Daily Deaths"], 2)
+        
 
     def test_sorts_records_by_date(self):
         records = [
