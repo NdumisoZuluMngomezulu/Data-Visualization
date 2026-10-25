@@ -1,527 +1,285 @@
 import json
+import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from contextlib import redirect_stdout
-from io import StringIO
+from unittest.mock import patch
 
-import numpy as np
+from visualization
+
+import matplotlib
+matplotlib.use("Agg")  # Use a non-interactive backend for testing.
+
 import pandas as pd
 
-from covid_analysis import (
-    standardize_column,
-    clean_value,
-    standardize_date,
-    load_data,
-    get_values,
-    star_graph,
-    trend_graph,
-)
 
+class TestToNumber(unittest.TestCase):
+    """Tests for converting source values into numbers."""
 
-class TestStandardizeColumn(unittest.TestCase):
-    """Tests for column name standardization."""
+    def test_none_returns_zero(self):
+        self.assertEqual(to_number(None), 0)
 
-    def test_lowercases_column_name(self):
-        self.assertEqual(
-            standardize_column("Daily Cases"),
-            "daily cases"
-        )
+    def test_empty_string_returns_zero(self):
+        self.assertEqual(to_number(""), 0)
 
-    def test_removes_extra_spaces(self):
-        self.assertEqual(
-            standardize_column("  Daily   Confirmed   Cases  "),
-            "daily confirmed cases"
-        )
+    def test_integer_is_preserved(self):
+        self.assertEqual(to_number(123), 123)
 
-    def test_converts_numbers_to_strings(self):
-        self.assertEqual(standardize_column(123), "123")
+    def test_float_is_preserved(self):
+        self.assertEqual(to_number(12.5), 12.5)
 
+    def test_string_with_spaces_as_thousands_separators(self):
+        self.assertEqual(to_number("61 927"), 61927)
 
-class TestCleanValue(unittest.TestCase):
-    """Tests for cleaning numeric values."""
+    def test_string_with_commas_as_thousands_separators(self):
+        self.assertEqual(to_number("1,234"), 1234)
 
-    def test_integer(self):
-        self.assertEqual(clean_value(100), 100)
+    def test_string_with_spaces_and_commas(self):
+        self.assertEqual(to_number(" 2, 345 "), 2345)
 
-    def test_numeric_string(self):
-        self.assertEqual(clean_value("250"), 250)
+    def test_whitespace_only_string_returns_zero(self):
+        self.assertEqual(to_number("   "), 0)
 
-    def test_removes_commas(self):
-        self.assertEqual(clean_value("1,234"), 1234)
-
-    def test_removes_spaces(self):
-        self.assertEqual(clean_value("1 234"), 1234)
-
-    def test_handles_decimal(self):
-        self.assertEqual(clean_value("123.9"), 123)
-
-    def test_handles_empty_string(self):
-        self.assertEqual(clean_value(""), 0)
-
-    def test_handles_whitespace(self):
-        self.assertEqual(clean_value("   "), 0)
-
-    def test_handles_none(self):
-        self.assertEqual(clean_value(None), 0)
-
-    def test_handles_nan(self):
-        self.assertEqual(clean_value(np.nan), 0)
-
-    def test_handles_invalid_string(self):
-        self.assertEqual(clean_value("not a number"), 0)
-
-    def test_handles_infinity(self):
-        self.assertEqual(clean_value("inf"), 0)
-
-    def test_handles_negative_number(self):
-        self.assertEqual(clean_value("-50"), -50)
-
-
-class TestStandardizeDate(unittest.TestCase):
-    """Tests for parsing supported date formats."""
-
-    def test_year_month_day_with_slashes(self):
-        result = standardize_date("2026/10/25")
-
-        self.assertEqual(
-            result,
-            datetime(2026, 10, 25)
-        )
-
-    def test_year_month_day_with_hyphens(self):
-        result = standardize_date("2026-10-25")
-
-        self.assertEqual(
-            result,
-            datetime(2026, 10, 25)
-        )
-
-    def test_day_month_year(self):
-        result = standardize_date("25/10/2026")
-
-        self.assertEqual(
-            result,
-            datetime(2026, 10, 25)
-        )
-
-    def test_handles_surrounding_spaces(self):
-        result = standardize_date(" 2026-10-25 ")
-
-        self.assertEqual(
-            result,
-            datetime(2026, 10, 25)
-        )
-
-    def test_invalid_date_returns_none(self):
-        self.assertIsNone(
-            standardize_date("2026-15-40")
-        )
-
-    def test_invalid_format_returns_none(self):
-        self.assertIsNone(
-            standardize_date("October 25, 2026")
-        )
-
-    def test_none_returns_none(self):
-        self.assertIsNone(standardize_date(None))
+    def test_invalid_numeric_string_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            to_number("not a number")
 
 
 class TestLoadData(unittest.TestCase):
-    """Tests for loading, cleaning, and sorting JSON data."""
+    """Tests for loading, validating, and cleaning JSON records."""
 
     def setUp(self):
-        self.temp_dir = TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-
-        self.file_path = (
-            Path(self.temp_dir.name) / "test_covid.json"
-        )
+        self.input_path = Path(self.temp_dir.name) / "test_covid.json"
 
     def write_json(self, data):
-        with open(self.file_path, "w", encoding="utf-8") as file:
+        with open(self.input_path, "w", encoding="utf-8") as file:
             json.dump(data, file)
 
-        return self.file_path
-
-    def test_loads_valid_json_records(self):
-        data = [
-            {
-                "Date": "2026-10-24",
-                "Daily Confirmed Cases": "1,200"
-            },
-            {
-                "Date": "2026-10-25",
-                "Daily Confirmed Cases": "1,500"
-            },
-        ]
-
-        self.write_json(data)
-        df = load_data(self.file_path)
-
-        self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 2)
-        self.assertEqual(
-            df["Daily Confirmed Cases"].tolist(),
-            [1200, 1500]
-        )
-
-    def test_loads_json_data_wrapper(self):
-        data = {
-            "data": [
-                {
-                    "Date": "2026-10-25",
-                    "Cases": "500"
-                }
-            ]
+    def valid_record(self, date="2020-03-05"):
+        return {
+            "Date": date,
+            "Total Confirmed Cases": "1 234",
+            "Total Deaths": "12",
+            "Total Recovered": "100",
+            "Active Cases": "1,122",
+            "Daily Confirmed Cases": "25",
+            "Daily  deaths": "2",
         }
 
-        self.write_json(data)
-        df = load_data(self.file_path)
+    def test_loads_valid_json_data(self):
+        self.write_json([self.valid_record()])
+
+        df = load_data(self.input_path)
 
         self.assertEqual(len(df), 1)
-        self.assertEqual(df.loc[0, "cases"], 500)
-
-    def test_standardizes_column_names(self):
-        data = [
-            {
-                "  DATE  ": "2026-10-25",
-                " DAILY   CASES ": "100"
-            }
-        ]
-
-        self.write_json(data)
-        df = load_data(self.file_path)
-
         self.assertIn("Date", df.columns)
-        self.assertIn("daily cases", df.columns)
+        self.assertIn("Daily Deaths", df.columns)
 
-    def test_sorts_records_chronologically(self):
-        data = [
-            {
-                "Date": "2026-10-25",
-                "Cases": "300"
-            },
-            {
-                "Date": "2026-10-23",
-                "Cases": "100"
-            },
-            {
-                "Date": "2026-10-24",
-                "Cases": "200"
-            },
+    def test_converts_numeric_columns(self):
+        self.write_json([self.valid_record()])
+
+        df = load_data(self.input_path)
+        record = df.iloc[0]
+
+        self.assertEqual(record["Total Confirmed Cases"], 1234)
+        self.assertEqual(record["Total Deaths"], 12)
+        self.assertEqual(record["Total Recovered"], 100)
+        self.assertEqual(record["Active Cases"], 1122)
+        self.assertEqual(record["Daily Confirmed Cases"], 25)
+        self.assertEqual(record["Daily Deaths"], 2)
+
+    def test_sorts_records_by_date(self):
+        records = [
+            self.valid_record("2020-03-07"),
+            self.valid_record("2020-03-05"),
+            self.valid_record("2020-03-06"),
         ]
+        self.write_json(records)
 
-        self.write_json(data)
-        df = load_data(self.file_path)
+        df = load_data(self.input_path)
 
+        dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
         self.assertEqual(
-            df["Date"].tolist(),
-            [
-                datetime(2026, 10, 23),
-                datetime(2026, 10, 24),
-                datetime(2026, 10, 25),
-            ]
+            dates,
+            ["2020-03-05", "2020-03-06", "2020-03-07"],
         )
 
-    def test_removes_records_with_invalid_dates(self):
-        data = [
-            {
-                "Date": "2026-10-24",
-                "Cases": "200"
-            },
-            {
-                "Date": "invalid-date",
-                "Cases": "500"
-            },
+    def test_drops_records_with_invalid_dates(self):
+        records = [
+            self.valid_record("2020-03-05"),
+            self.valid_record("not-a-date"),
         ]
+        self.write_json(records)
 
-        self.write_json(data)
-        df = load_data(self.file_path)
+        df = load_data(self.input_path)
 
         self.assertEqual(len(df), 1)
-        self.assertEqual(df.loc[0, "cases"], 200)
-
-    def test_cleans_numeric_values(self):
-        data = [
-            {
-                "Date": "2026-10-25",
-                "Cases": "1,200",
-                "Deaths": " 25 ",
-                "Recoveries": "",
-                "Other": "invalid"
-            }
-        ]
-
-        self.write_json(data)
-        df = load_data(self.file_path)
-
-        self.assertEqual(df.loc[0, "cases"], 1200)
-        self.assertEqual(df.loc[0, "deaths"], 25)
-        self.assertEqual(df.loc[0, "recoveries"], 0)
-        self.assertEqual(df.loc[0, "other"], 0)
-
-    def test_supports_multiple_date_formats(self):
-        data = [
-            {
-                "Date": "25/10/2026",
-                "Cases": "300"
-            },
-            {
-                "Date": "2026/10/23",
-                "Cases": "100"
-            },
-            {
-                "Date": "2026-10-24",
-                "Cases": "200"
-            },
-        ]
-
-        self.write_json(data)
-        df = load_data(self.file_path)
-
         self.assertEqual(
-            df["Date"].tolist(),
-            [
-                datetime(2026, 10, 23),
-                datetime(2026, 10, 24),
-                datetime(2026, 10, 25),
-            ]
+            df.iloc[0]["Date"].strftime("%Y-%m-%d"),
+            "2020-03-05",
         )
 
-    def test_rejects_non_list_json(self):
-        self.write_json("this is not a JSON records list")
-
-        with self.assertRaises(ValueError):
-            load_data(self.file_path)
-
-    def test_rejects_empty_data(self):
+    def test_rejects_empty_json_array(self):
         self.write_json([])
 
         with self.assertRaisesRegex(
             ValueError,
-            "No valid records found"
+            "Expected a non-empty JSON array",
         ):
-            load_data(self.file_path)
+            load_data(self.input_path)
 
-    def test_rejects_missing_date_column(self):
+    def test_rejects_json_object_instead_of_array(self):
+        self.write_json({"Date": "2020-03-05"})
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Expected a non-empty JSON array",
+        ):
+            load_data(self.input_path)
+
+    def test_rejects_missing_required_columns(self):
         self.write_json([
             {
-                "Cases": "100"
+                "Date": "2020-03-05",
+                "Total Deaths": "1",
             }
         ])
 
         with self.assertRaisesRegex(
             ValueError,
-            "No valid records found"
+            "Missing required JSON field",
         ):
-            load_data(self.file_path)
+            load_data(self.input_path)
 
-    def test_rejects_all_invalid_dates(self):
-        self.write_json([
-            {
-                "Date": "not-a-date",
-                "Cases": "100"
-            }
-        ])
+    def test_handles_missing_daily_deaths_column(self):
+        record = self.valid_record()
+        del record["Daily  deaths"]
+        self.write_json([record])
 
-        with self.assertRaisesRegex(
-            ValueError,
-            "No valid records found"
-        ):
-            load_data(self.file_path)
+        df = load_data(self.input_path)
 
-    def test_rejects_duplicate_normalized_columns(self):
-        self.write_json([
-            {
-                "Date": "2026-10-25",
-                " Cases ": "100",
-                "CASES": "200"
-            }
-        ])
+        self.assertEqual(df.iloc[0]["Daily Deaths"], 0)
 
-        with self.assertRaisesRegex(
-            ValueError,
-            "Duplicate column names"
-        ):
-            load_data(self.file_path)
+    def test_handles_alternate_daily_deaths_spacing(self):
+        record = self.valid_record()
+        del record["Daily  deaths"]
+        record["daily deaths"] = "7"
+        self.write_json([record])
 
-    def test_missing_file_raises_error(self):
-        missing_path = (
-            Path(self.temp_dir.name) / "missing.json"
-        )
+        df = load_data(self.input_path)
 
-        with self.assertRaises(FileNotFoundError):
-            load_data(missing_path)
+        self.assertEqual(df.iloc[0]["Daily Deaths"], 7)
+
+    def test_returns_empty_dataframe_if_all_dates_are_invalid(self):
+        self.write_json([self.valid_record("invalid-date")])
+
+        df = load_data(self.input_path)
+
+        self.assertTrue(df.empty)
 
 
-class TestGetValues(unittest.TestCase):
-    """Tests for retrieving numeric columns."""
+class TestCreateCharts(unittest.TestCase):
+    """Tests that charts and the cleaned CSV are created."""
 
     def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.output_dir = Path(self.temp_dir.name) / "output"
+
         self.df = pd.DataFrame({
-            "Date": [
-                datetime(2026, 10, 24),
-                datetime(2026, 10, 25),
-            ],
-            "daily cases": [100, 200],
+            "Date": pd.to_datetime([
+                "2020-03-05",
+                "2020-03-06",
+            ]),
+            "Total Confirmed Cases": [10, 20],
+            "Total Deaths": [1, 2],
+            "Total Recovered": [3, 5],
+            "Active Cases": [6, 13],
+            "Daily Confirmed Cases": [10, 10],
+            "Daily Deaths": [1, 1],
         })
 
-    def test_retrieves_existing_field(self):
-        result = get_values(self.df, "daily cases")
+    def test_creates_output_directory_and_files(self):
+        create_charts(self.df, self.output_dir)
 
-        np.testing.assert_array_equal(
-            result,
-            np.array([100, 200])
+        self.assertTrue(self.output_dir.is_dir())
+        self.assertTrue(
+            (self.output_dir / "covid_dashboard.png").is_file()
+        )
+        self.assertTrue(
+            (self.output_dir / "daily_deaths.png").is_file()
+        )
+        self.assertTrue(
+            (self.output_dir / "covid_cleaned.csv").is_file()
         )
 
-    def test_field_matching_ignores_case_and_spaces(self):
-        result = get_values(
-            self.df,
-            "  DAILY   CASES "
+    def test_exports_cleaned_csv_with_expected_columns(self):
+        create_charts(self.df, self.output_dir)
+
+        csv_path = self.output_dir / "covid_cleaned.csv"
+        exported_df = pd.read_csv(csv_path)
+
+        self.assertIn("Date", exported_df.columns)
+        self.assertIn("Total Confirmed Cases", exported_df.columns)
+        self.assertIn("Daily Deaths", exported_df.columns)
+        self.assertEqual(len(exported_df), 2)
+
+    def test_prints_output_file_locations(self):
+        with patch("builtins.print") as mock_print:
+            create_charts(self.df, self.output_dir)
+
+        printed_text = " ".join(
+            str(call.args[0]) for call in mock_print.call_args_list
         )
 
-        np.testing.assert_array_equal(
-            result,
-            np.array([100, 200])
-        )
-
-    def test_missing_field_returns_zeros(self):
-        result = get_values(self.df, "Deaths")
-
-        np.testing.assert_array_equal(
-            result,
-            np.array([0, 0])
-        )
+        self.assertIn("Read 2 daily records", printed_text)
+        self.assertIn("covid_dashboard.png", printed_text)
+        self.assertIn("daily_deaths.png", printed_text)
+        self.assertIn("covid_cleaned.csv", printed_text)
 
 
-class TestGraphs(unittest.TestCase):
-    """Tests for terminal graph output."""
+class TestMain(unittest.TestCase):
+    """Tests command-line argument handling."""
 
-    def setUp(self):
-        self.df = pd.DataFrame({
-            "Date": [
-                datetime(2026, 10, 23),
-                datetime(2026, 10, 24),
-                datetime(2026, 10, 25),
-            ],
-            "daily cases": [100, 200, 300],
-        })
+    def test_main_uses_supplied_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "input.json"
+            output_dir = temp_path / "charts"
 
-    def test_star_graph_prints_title_and_values(self):
-        output = StringIO()
+            with open(input_path, "w", encoding="utf-8") as file:
+                json.dump(
+                    [{
+                        "Date": "2020-03-05",
+                        "Total Confirmed Cases": "10",
+                        "Total Deaths": "1",
+                        "Total Recovered": "2",
+                        "Active Cases": "7",
+                        "Daily Confirmed Cases": "10",
+                    }],
+                    file,
+                )
 
-        with redirect_stdout(output):
-            star_graph(self.df, "daily cases")
+            with patch(
+                "sys.argv",
+                [
+                    "visualise_covid.py",
+                    "--input", str(input_path),
+                    "--output-dir", str(output_dir),
+                ],
+            ):
+                main()
 
-        result = output.getvalue()
-
-        self.assertIn("DAILY CASES", result)
-        self.assertIn("20261023", result)
-        self.assertIn("20261024", result)
-        self.assertIn("20261025", result)
-        self.assertIn("100", result)
-        self.assertIn("200", result)
-        self.assertIn("300", result)
-
-    def test_star_graph_handles_zero_values(self):
-        df = self.df.copy()
-        df["daily cases"] = [0, 0, 0]
-
-        output = StringIO()
-
-        with redirect_stdout(output):
-            star_graph(df, "daily cases")
-
-        self.assertIn("DAILY CASES", output.getvalue())
-
-    def test_trend_graph_prints_title_and_dates(self):
-        output = StringIO()
-
-        with redirect_stdout(output):
-            trend_graph(
-                self.df,
-                "daily cases",
-                height=5,
-                width=10
+            self.assertTrue(
+                (output_dir / "covid_dashboard.png").is_file()
             )
-
-        result = output.getvalue()
-
-        self.assertIn("DAILY CASES - TREND", result)
-        self.assertIn("2026/10/23", result)
-        self.assertIn("2026/10/25", result)
-        self.assertIn("*", result)
-
-    def test_trend_graph_handles_equal_values(self):
-        df = self.df.copy()
-        df["daily cases"] = [100, 100, 100]
-
-        output = StringIO()
-
-        with redirect_stdout(output):
-            trend_graph(df, "daily cases")
-
-        self.assertIn(
-            "DAILY CASES - TREND",
-            output.getvalue()
-        )
-
-    def test_trend_graph_limits_number_of_points(self):
-        df = pd.DataFrame({
-            "Date": pd.date_range(
-                start="2026-01-01",
-                periods=100
-            ),
-            "daily cases": np.arange(100),
-        })
-
-        output = StringIO()
-
-        with redirect_stdout(output):
-            trend_graph(
-                df,
-                "daily cases",
-                height=5,
-                width=10
+            self.assertTrue(
+                (output_dir / "daily_deaths.png").is_file()
             )
-
-        result = output.getvalue()
-
-        # Ten plotted points produce ten chart columns.
-        chart_line = [
-            line for line in result.splitlines()
-            if line.startswith("      99 |")
-        ]
-
-        self.assertTrue(chart_line)
-
-    def test_trend_graph_rejects_height_below_two(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            "height must be at least 2"
-        ):
-            trend_graph(self.df, "daily cases", height=1)
-
-    def test_trend_graph_rejects_width_below_two(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            "width must be at least 2"
-        ):
-            trend_graph(self.df, "daily cases", width=1)
-
-    def test_trend_graph_rejects_empty_dataframe(self):
-        empty_df = pd.DataFrame({
-            "Date": pd.Series(dtype="datetime64[ns]"),
-            "daily cases": pd.Series(dtype="int64"),
-        })
-
-        with self.assertRaisesRegex(
-            ValueError,
-            "without data"
-        ):
-            trend_graph(empty_df, "daily cases")
+            self.assertTrue(
+                (output_dir / "covid_cleaned.csv").is_file()
+            )
 
 
 if __name__ == "__main__":

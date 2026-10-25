@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Usage:
     cd into src, then cn into data-package
@@ -8,6 +7,7 @@ Usage:
 Install dependencies:
     python -m pip install pandas matplotlib
 """
+
 import argparse
 import json
 import re
@@ -18,7 +18,7 @@ import pandas as pd
 
 
 def to_number(value):
-    """Convert values such as 61927, '61 927', or '1,354' into numbers."""
+    #handle spaces and commas in numbers, and null/empty numbers
     if value is None or value == "":
         return 0
     if isinstance(value, (int, float)):
