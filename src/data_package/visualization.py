@@ -140,7 +140,7 @@ def main():
     filename = sys.argv[1] if len(sys.argv) > 1 else "covid.json"
     field = sys.argv[2] if len(sys.argv) > 2 else "Daily Confirmed Cases"
 
-    # Fix: If the file path is relative (like 'covid.json'), 
+    #If the file path is relative (like 'covid.json'), 
     # force it to look inside the script's directory.
     if not os.path.isabs(filename):
         script_dir = os.path.dirname(os.path.abspath(__file__))
