@@ -4,12 +4,26 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from visualization
-
 import matplotlib
 matplotlib.use("Agg")  # Use a non-interactive backend for testing.
 
 import pandas as pd
+
+import sys
+from pathlib import Path
+
+# Add the directory containing visualization_libraries.py to Python's import path.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_DIR = PROJECT_ROOT / "src" / "data_package"
+
+sys.path.insert(0, str(SOURCE_DIR))
+
+from visualization_libraries import (
+    to_number,
+    load_data,
+    create_charts,
+    main,
+)
 
 
 class TestToNumber(unittest.TestCase):

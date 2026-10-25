@@ -1,4 +1,3 @@
-
 import json
 import os
 import tempfile
@@ -6,6 +5,15 @@ import unittest
 from datetime import datetime
 from io import StringIO
 from unittest.mock import patch
+
+import sys
+from pathlib import Path
+
+# Locate the source directory from the test file.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_DIR = PROJECT_ROOT / "src" / "data_package"
+
+sys.path.insert(0, str(SOURCE_DIR))
 
 import visualization as covid
 
